@@ -15,6 +15,8 @@ interface ReviewInput {
   config: AutoReviewConfig
   branch: SessionEntry[]
   details: PromptPermissionDetails
+  /** 実行中のツールから取得した引数全体。取得できなければ会話記録から探す */
+  toolInput?: unknown
   /** Already narrowed to the files the user's trust covers */
   contextFiles: readonly ContextFile[]
   /** The conversation a follow-up review continues, if one is open */

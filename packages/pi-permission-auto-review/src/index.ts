@@ -70,6 +70,15 @@ function statusText(current: Generation, tally: Tally): string {
 }
 
 export default function permissionAutoReview(pi: ExtensionAPI): void {
+  // 権限ゲートより前の開始イベントで、入れ子を含む実引数を収集する。
+  // プレビューや履歴だけを根拠にしないため（審査と safe-git-read の両方で使う）
+  const activeInputs = new Map<string, { name: string; input: unknown }>()
+  pi.on('tool_execution_start', event => {
+    activeInputs.set(event.toolCallId, { name: event.toolName, input: event.args })
+  })
+  pi.on('tool_execution_end', event => {
+    activeInputs.delete(event.toolCallId)
+  })
   let generation: Generation | undefined
   let tally: Tally = { allow: 0, deny: 0, defer: 0 }
   // As the latest run loaded them, which is what the agent itself was told
@@ -90,6 +99,15 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
         : createPermissionReviewer({
             config,
             context: runtime,
+            getToolInput: details => {
+              // 別セッションから転送された要求は、このプロセスの実行中ツールと対応しない
+              if (details.forwarding !== undefined || details.toolCallId === undefined) {
+                return undefined
+              }
+              const active = activeInputs.get(details.toolCallId)
+
+              return active?.name === details.toolName ? active?.input : undefined
+            },
             contextFiles: () => contextFiles,
             sessionSignal: controller.signal,
           })
@@ -166,6 +184,7 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
   }
 
   pi.on('session_start', (_event, ctx) => {
+    activeInputs.clear()
     retire(generation)
     const projectTrusted = ctx.isProjectTrusted()
     const result = loadConfig(ctx.cwd, projectTrusted)
@@ -219,6 +238,7 @@ export default function permissionAutoReview(pi: ExtensionAPI): void {
   })
 
   pi.on('session_shutdown', (_event, ctx) => {
+    activeInputs.clear()
     ctx.ui.setStatus(EXTENSION_ID, undefined)
     retire(generation)
     generation = undefined

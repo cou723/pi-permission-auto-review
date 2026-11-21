@@ -17,7 +17,7 @@ export const CODEX_PRESET: Preset = {
   createLimiter: () => new DenialCircuitBreaker(),
   async review(input, complete) {
     const { config, branch, details } = input
-    const toolInput = findToolCallInput(branch, details.toolCallId)
+    const toolInput = input.toolInput ?? findToolCallInput(branch, details.toolCallId)
     const { request, transcript, priorReviews } = prepareReview(
       input,
       { systemPrompt: buildSystemPrompt(config), reasoning: config.reasoning },

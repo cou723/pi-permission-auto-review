@@ -17,6 +17,8 @@ export interface ReviewerRuntime {
   config: AutoReviewConfig
   /** Read at every review, since `signal` belongs to the turn in progress */
   context: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager' | 'signal' | 'hasUI' | 'ui'>
+  /** 同じセッションで実行中のツールから、入れ子を含む引数全体を取り出す。取得できなければ undefined */
+  getToolInput?: ((details: PromptPermissionDetails) => unknown) | undefined
   /** The context files the user's trust covers, as of the latest run */
   contextFiles: () => readonly ContextFile[]
   /** Aborted when the reviewer is replaced or the session ends */
@@ -75,6 +77,7 @@ async function runReview(
         config,
         branch: context.sessionManager.getBranch(),
         details,
+        toolInput: runtime.getToolInput?.(details),
         contextFiles: runtime.contextFiles(),
         conversation,
         contextWindow: model.contextWindow,
