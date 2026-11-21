@@ -12,11 +12,11 @@ const PERMISSION_FIELDS = [
   'command',
   'target',
   'toolInputPreview',
-  'sessionLabel',
+  // sessionLabel / sessionApproval は「このセッションで許可」を選んだ場合の候補であり、既存の許可ではない。
+  // 分類器が既存の許可範囲と誤読しないよう渡さない（権限 UI やセッション記録は変えない）。
   'surface',
   'value',
   'forwarding',
-  'sessionApproval',
   'accessIntent',
 ] as const
 
