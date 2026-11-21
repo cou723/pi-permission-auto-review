@@ -46,6 +46,42 @@
       "type": "string",
       "default": "auto"
     },
+    "fallback": {
+      "anyOf": [
+        {
+          "const": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reasoning": {
+              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+              "type": "string"
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300000
+            },
+            "cooldownMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300000
+            }
+          },
+          "required": ["provider", "model", "reasoning", "timeoutMs", "cooldownMs"],
+          "additionalProperties": false
+        }
+      ]
+    },
     "autoMode": {
       "type": "object",
       "properties": {

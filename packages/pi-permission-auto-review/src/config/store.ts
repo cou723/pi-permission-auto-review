@@ -71,7 +71,12 @@ function merge(global: ScopeSnapshot, project: ScopeSnapshot): LoadConfigResult 
     return { config: undefined, issues }
   }
 
-  return { config: mergeConfig(global.config, project.config), issues: [] }
+  // 各ファイルが妥当でも、組み合わせた結果が不正になり得る。例外ではなく設定の問題として返す。
+  try {
+    return { config: mergeConfig(global.config, project.config), issues: [] }
+  } catch (error) {
+    return { config: undefined, issues: [describeError(error)] }
+  }
 }
 
 export function loadConfig(cwd: string, projectTrusted: boolean): LoadConfigResult {

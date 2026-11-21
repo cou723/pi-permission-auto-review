@@ -7,6 +7,7 @@ import type { Authorizer, AuthorizerVerdict, PromptPermissionDetails } from '@go
 import { PRESETS } from '../presets/presets.js'
 import { createModelCall } from './model-call.js'
 import { resolveReviewModel } from './model.js'
+import { createReviewRouter } from './review-router.js'
 
 const DECISION_EVENT = 'auto_review.decision'
 
@@ -28,7 +29,7 @@ export interface PermissionReviewer {
   resetTurn: () => void
 }
 
-type ReviewResult =
+export type ReviewResult =
   | (Exclude<ReviewOutcome, { kind: 'failed' }> & { usage: CallUsage })
   | { kind: 'failed'; failure: FailureCategory; fields?: ReviewFields; usage?: CallUsage }
 
@@ -94,6 +95,15 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): PermissionRe
   const limiter = preset.createLimiter()
   // As upstream keeps it: concurrent reviews each continue the conversation they started from, and the last to finish wins
   let conversation: ReviewConversation | undefined
+  // 切替時は会話を共有せず、別プロバイダーへ過去の回答を持ち込まない
+  const review = createReviewRouter(runtime, async (attemptRuntime, details) =>
+    runReview(
+      attemptRuntime,
+      preset,
+      details,
+      config.fallback === undefined || config.fallback === false ? conversation : undefined,
+    ),
+  )
 
   const authorize: Authorizer['authorize'] = async (details, _query, log) => {
     const startedAt = Date.now()
@@ -117,12 +127,13 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): PermissionRe
         return { kind: 'deny', reason: refusal }
       }
 
-      const result = await runReview(runtime, preset, details, conversation)
+      const result = await review(details)
       const durationMs = elapsed()
       const diagnostics = {
         policyRevision: preset.policyRevision,
         contextSource: 'active-branch',
         ...result.fields,
+        ...result.diagnostics,
         ...(result.usage === undefined ? {} : { usage: result.usage }),
       }
       if (result.kind === 'failed') {

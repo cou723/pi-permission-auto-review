@@ -33,6 +33,15 @@ const timeoutSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(1), v.maxVa
 const maxRetriesSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(0), v.maxValue(20))
 const rulesSchema = v.array(nonBlankSchema)
 const builtInRulesSchema = v.optional(rulesSchema, () => [DEFAULTS_ENTRY])
+// 優先モデルを利用できないときだけ使う切替先。false は切替なし（上流と同じ単一モデル動作）を明示する。
+const fallbackSchema = v.strictObject({
+  provider: nonBlankSchema,
+  model: nonBlankSchema,
+  reasoning: v.picklist(REASONING_LEVELS),
+  timeoutMs: timeoutSchema,
+  /** 優先モデルの障害後、再試行せずに切替先を直接使う時間 */
+  cooldownMs: timeoutSchema,
+})
 
 const fileSchema = v.strictObject({
   $schema: v.optional(v.pipe(v.string(), v.minLength(1))),
@@ -44,6 +53,7 @@ const fileSchema = v.strictObject({
   maxRetries: v.optional(maxRetriesSchema),
   attemptTimeoutMs: v.optional(timeoutSchema),
   followUpReviews: v.optional(v.picklist(FOLLOW_UP_REVIEW_MODES)),
+  fallback: v.optional(v.union([v.literal(false), fallbackSchema])),
   autoMode: v.optional(
     v.strictObject({
       environment: v.optional(rulesSchema),
@@ -80,6 +90,14 @@ const configSchema = v.pipe(
   })),
 )
 
+export interface FallbackConfig {
+  provider: string
+  model: string
+  reasoning: ReasoningLevel
+  timeoutMs: number
+  cooldownMs: number
+}
+
 // `isolatedDeclarations` cannot emit a `v.InferOutput` of a private schema; `DEFAULT_CONFIG` keeps the two in step
 export interface AutoReviewConfig {
   $schema?: string | undefined
@@ -91,6 +109,8 @@ export interface AutoReviewConfig {
   maxRetries: number
   attemptTimeoutMs?: number | undefined
   followUpReviews: (typeof FOLLOW_UP_REVIEW_MODES)[number]
+  /** 未設定と false は、切替なしの単一モデル動作 */
+  fallback?: false | FallbackConfig | undefined
   /** Each list still holds `DEFAULTS_ENTRY` where the preset's built-in entries belong */
   autoMode: Record<RuleListName, string[]>
 }

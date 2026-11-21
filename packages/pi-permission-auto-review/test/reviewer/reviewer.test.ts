@@ -98,12 +98,14 @@ describe('permission reviewer', () => {
       // Request-time authentication fails inside the registry stream, which reports an unusable login the same way
       { ...reply('', 'error'), errorMessage: 'No API key found for custom-review' },
     ]
-    for (const failure of failures) {
+    // 明示的な拒否（rawStopReason: refusal）だけは、モデル切替の対象外と分かるよう provider-refused で記録する
+    const categories = ['provider-refused', 'provider-error', 'provider-error']
+    for (const [index, failure] of failures.entries()) {
       const harness = createHarness({ replies: [failure, reply(ALLOW)] })
       const { verdict, entries } = await harness.authorize()
 
       expect(verdict).toEqual({ kind: 'defer' })
-      expect(entries[0]?.[1]).toMatchObject({ errorCategory: 'provider-error' })
+      expect(entries[0]?.[1]).toMatchObject({ errorCategory: categories[index] })
       expect(harness.streamSimple).toHaveBeenCalledOnce()
     }
   })

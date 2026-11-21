@@ -14,6 +14,8 @@ const SESSION_KEY_PREFIX = 'auto-review:'
 export type CallFailure =
   | 'input-budget-exceeded'
   | 'provider-error'
+  /** プロバイダーが審査を明示的に拒否した。別モデルへの再送で迂回しない */
+  | 'provider-refused'
   | 'invalid-response'
   | 'attempt-timeout'
   | 'timeout'
@@ -70,6 +72,8 @@ async function sleep(milliseconds: number, signal: AbortSignal): Promise<void> {
 /** A provider is not bound to honour the abort signal promptly, so the timeout is enforced here */
 async function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) {
+    // 中止済みでも、進行中リクエストの拒否を未処理にしない
+    void promise.catch(() => {})
     throw abortError()
   }
 
@@ -141,6 +145,9 @@ export function createModelCall(options: ModelCallOptions): ModelCall {
         usage.input += reply.usage.input
         usage.cacheRead += reply.usage.cacheRead
         usage.output += reply.usage.output
+        if (reply.rawStopReason === 'refusal') {
+          return { ok: false, failure: 'provider-refused' }
+        }
         if (reply.stopReason === 'error' && !isTransient(reply)) {
           return { ok: false, failure: 'provider-error' }
         }
