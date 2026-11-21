@@ -1,4 +1,6 @@
 const TRUNCATION_TAG = '\n...[truncated]...\n'
+/** 審査プロンプトに載せるコンテキストファイル（AGENTS.md など）1件あたりの上限 */
+export const CONTEXT_FILE_CHARACTERS = 16_000
 
 export function approximateTokens(text: string): number {
   return Math.ceil(text.length / 4)

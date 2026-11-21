@@ -1,6 +1,6 @@
 import type { AutoReviewConfig, RuleListName } from '../../config/config.js'
 import type { ContextFile } from '../presets.js'
-import { truncateToCharacters } from '../../text.js'
+import { CONTEXT_FILE_CHARACTERS, truncateToCharacters } from '../../text.js'
 import { bulletList, expandRules } from '../rules.js'
 import { PI_ADAPTATION_REVISION, UPSTREAM_VERSION } from './upstream.js'
 
@@ -8,8 +8,6 @@ import { PI_ADAPTATION_REVISION, UPSTREAM_VERSION } from './upstream.js'
 // source. Its Chrome, connected-app, teammate and remote-machine rules stay out, as Pi has none of them.
 // `pnpm sync:claude-code-policy` reports what a newer Claude Code release added or dropped
 export const POLICY_REVISION: string = `claude-code/${UPSTREAM_VERSION}+pi${PI_ADAPTATION_REVISION}`
-
-const CONTEXT_FILE_CHARACTERS = 16_000
 
 const ROLE = `
 You review the actions an autonomous coding agent running in Pi is about to take, one at a time, and decide whether each must be blocked before it runs. The agent can run shell commands, edit files and reach services with the developer's credentials, and it often works for long stretches while nobody watches. Most of what it does is legitimate; you stop the few actions a careful developer would not take on their own initiative, or that go beyond what the user asked for.

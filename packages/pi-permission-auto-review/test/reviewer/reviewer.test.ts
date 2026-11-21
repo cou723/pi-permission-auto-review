@@ -181,9 +181,13 @@ describe('permission reviewer', () => {
 
     expect(await verdict).toMatchObject({ kind: 'deny' })
     expect(entries[0]?.[1]).toMatchObject({ outcome: 'deny', errorCategory: 'cancelled' })
+    // モデル呼び出しの前に実行スクリプトを集めるため、最初の審査は呼び出し前に中断され得る。
+    // 確かめるのは、中断後の要求が呼び出しを増やさないこと
+    const callsBeforeSecondAsk = harness.streamSimple.mock.calls.length
+    expect(callsBeforeSecondAsk).toBeLessThanOrEqual(1)
 
     expect((await harness.authorize('request-2')).verdict).toMatchObject({ kind: 'deny' })
-    expect(harness.streamSimple).toHaveBeenCalledOnce()
+    expect(harness.streamSimple).toHaveBeenCalledTimes(callsBeforeSecondAsk)
   })
 
   describe('retries', () => {

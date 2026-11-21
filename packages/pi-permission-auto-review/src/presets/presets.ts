@@ -1,6 +1,7 @@
 import type { AutoReviewConfig, PresetName, RuleListName } from '../config/config.js'
 import type { ReviewConversation } from '../reviewer/conversation.js'
 import type { CallFailure, ModelCall } from '../reviewer/model-call.js'
+import type { ScriptEvidence, ScriptEvidenceStat } from '../reviewer/review-context.js'
 import type { SessionEntry } from '@earendil-works/pi-coding-agent'
 import type { PromptPermissionDetails } from '@gotgenes/pi-permission-system'
 import { CLAUDE_CODE_PRESET } from './claude-code/preset.js'
@@ -17,6 +18,8 @@ interface ReviewInput {
   details: PromptPermissionDetails
   /** 実行中のツールから取得した引数全体。取得できなければ会話記録から探す */
   toolInput?: unknown
+  /** 実行されるスクリプトの中身。分類器はツールを持たないため、審査の前に読み出して渡す */
+  scriptEvidence?: readonly ScriptEvidence[]
   /** Already narrowed to the files the user's trust covers */
   contextFiles: readonly ContextFile[]
   /** The conversation a follow-up review continues, if one is open */
@@ -25,7 +28,7 @@ interface ReviewInput {
 }
 
 /** Logged with the decision: never the reviewer's prose, and no key naming a token or an authorization, which the log masks */
-export type ReviewFields = Record<string, string | number | boolean>
+export type ReviewFields = Record<string, string | number | boolean | readonly ScriptEvidenceStat[]>
 
 export type ReviewOutcome =
   | { kind: 'allow'; fields: ReviewFields; conversation: ReviewConversation | undefined }

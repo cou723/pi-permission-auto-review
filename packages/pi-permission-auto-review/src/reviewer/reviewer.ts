@@ -5,8 +5,10 @@ import type { CallFailure, CallUsage } from './model-call.js'
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent'
 import type { Authorizer, AuthorizerVerdict, PromptPermissionDetails } from '@gotgenes/pi-permission-system'
 import { PRESETS } from '../presets/presets.js'
+import { findToolCallInput } from '../presets/session.js'
 import { createModelCall } from './model-call.js'
 import { resolveReviewModel } from './model.js'
+import { collectScriptEvidence, confirmationNotice, failureNotice } from './review-context.js'
 import { createReviewRouter } from './review-router.js'
 import { isSafeGitRead, safeGitReadCandidate } from './safe-git-read.js'
 
@@ -73,12 +75,21 @@ async function runReview(
       deadline,
       usage,
     })
+    const branch = context.sessionManager.getBranch()
+    const toolInput = runtime.getToolInput?.(details)
+    // 分類器はツールを持たないため、実行されるスクリプトの中身を審査の前に読み出して渡す
+    const scriptEvidence = await collectScriptEvidence(
+      details,
+      toolInput ?? findToolCallInput(branch, details.toolCallId),
+      context.cwd,
+    )
     const outcome = await preset.review(
       {
         config,
-        branch: context.sessionManager.getBranch(),
+        branch,
         details,
-        toolInput: runtime.getToolInput?.(details),
+        toolInput,
+        scriptEvidence,
         contextFiles: runtime.contextFiles(),
         conversation,
         contextWindow: model.contextWindow,
@@ -173,6 +184,10 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): PermissionRe
           result.failure === 'cancelled'
             ? { kind: 'deny', reason: 'The automatic review was cancelled before it finished' }
             : { kind: 'defer' }
+        // 以前は通知なしで確認画面だけが出ていた。自動審査を完了できなかった理由を日本語で伝える
+        if (verdict.kind === 'defer' && runtime.context.hasUI) {
+          runtime.context.ui.notify(failureNotice(result.failure), 'warning')
+        }
         limiter.recordNonDenial()
         logFailure({ ...entryBase, outcome: verdict.kind, errorCategory: result.failure, durationMs, ...diagnostics })
 
@@ -185,7 +200,7 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): PermissionRe
         limiter.recordNonDenial()
         log.review(DECISION_EVENT, { ...entryBase, outcome: 'defer', durationMs, ...diagnostics })
         if (runtime.context.hasUI) {
-          runtime.context.ui.notify(`権限確認: ${result.reason}`, 'info')
+          runtime.context.ui.notify(confirmationNotice(result.reason), 'info')
         }
 
         return { kind: 'defer' }
@@ -210,6 +225,9 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): PermissionRe
       conversation = undefined
       limiter.recordNonDenial()
       logFailure({ ...entryBase, outcome: 'defer', errorCategory: 'internal-error', durationMs: elapsed() })
+      if (runtime.context.hasUI) {
+        runtime.context.ui.notify(failureNotice('internal-error'), 'warning')
+      }
 
       return { kind: 'defer' }
     }

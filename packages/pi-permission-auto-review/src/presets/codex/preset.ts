@@ -1,5 +1,6 @@
 import type { Preset } from '../presets.js'
 import { nextConversation, prepareReview } from '../../reviewer/conversation.js'
+import { renderScriptEvidence, scriptEvidenceStats } from '../../reviewer/review-context.js'
 import { findToolCallInput } from '../session.js'
 import { DenialCircuitBreaker } from './circuit-breaker.js'
 import { BUILT_IN_RULES, buildSystemPrompt, POLICY_REVISION } from './policy.js'
@@ -20,19 +21,28 @@ export const CODEX_PRESET: Preset = {
     const toolInput = input.toolInput ?? findToolCallInput(branch, details.toolCallId)
     const { request, transcript, priorReviews } = prepareReview(
       input,
-      { systemPrompt: buildSystemPrompt(config), reasoning: config.reasoning },
+      { systemPrompt: buildSystemPrompt(config, input.contextFiles), reasoning: config.reasoning },
       after => {
+        // 添付は毎回現在のファイルを渡す。履歴が省略されても、この審査の添付は保持する
+        const evidence = renderScriptEvidence(input.scriptEvidence)
         if (after === undefined) {
           const full = renderTranscript(branch)
 
-          return { content: buildUserPrompt(full, details, toolInput), transcript: full }
+          return { content: buildUserPrompt(full, details, toolInput) + evidence, transcript: full }
         }
         const delta = renderTranscript(branch, after.entryIndex + 1)
 
-        return { content: buildFollowUpPrompt(delta, details, toolInput), transcript: delta }
+        return { content: buildFollowUpPrompt(delta, details, toolInput) + evidence, transcript: delta }
       },
     )
-    const fields = { toolInputIncluded: toolInput !== undefined, ...transcript.stats, priorReviews }
+    const fields = {
+      toolInputIncluded: toolInput !== undefined,
+      contextFileCount: input.contextFiles.length,
+      scriptFileCount: (input.scriptEvidence ?? []).length,
+      scriptEvidence: scriptEvidenceStats(input.scriptEvidence),
+      ...transcript.stats,
+      priorReviews,
+    }
     const result = await complete(request, parseReviewAssessment)
     if (!result.ok) {
       return { kind: 'failed', failure: result.failure, fields }
@@ -53,6 +63,8 @@ export const CODEX_PRESET: Preset = {
       riskLevel: assessment.riskLevel,
       userApproval: assessment.userAuthorization,
       modelOutcome: assessment.outcome,
+      // 確認へ回した理由を、同じログの要求と requestId で照合できるように残す
+      ...(assessment.outcome === 'ask' ? { rationale: assessment.rationale } : {}),
     }
     // critical は、モデルが allow / ask を返しても拒否を維持する
     if (assessment.riskLevel !== 'critical' && assessment.outcome === 'ask') {

@@ -1,13 +1,16 @@
 import type { AutoReviewConfig, RuleListName } from '../../config/config.js'
+import type { ContextFile } from '../presets.js'
 import { DEFAULTS_ENTRY } from '../../config/config.js'
+import { CONTEXT_FILE_CHARACTERS, truncateToCharacters } from '../../text.js'
 import { bulletList, expandRules } from '../rules.js'
 import { PI_ADAPTATION_REVISION, UPSTREAM_REVISION } from './upstream.js'
 
 // A Pi rewrite of the Guardian sources in ./upstream.ts, not a copy: Pi's reviewer has no tools and reads a different
 // evidence-provenance model. Upstream's `Execution Environment` section and MCP `connected_account_email` rule stay
 // out, as both describe Codex's sandbox. `pnpm sync:guardian-policy` reports the upstream commits to port by hand
-// -confirmation: ask の判定と独立ポリシーを加えた fork の版。審査ログで上流のプロンプトと区別する
-export const POLICY_REVISION: string = `openai-codex/${UPSTREAM_REVISION}+pi${PI_ADAPTATION_REVISION}-confirmation`
+// -confirmation: ask の判定と独立ポリシーを加えた fork の版。-context-v2: AGENTS.md と実行スクリプトを証拠に加えた版。
+// 審査ログで上流のプロンプトと区別する
+export const POLICY_REVISION: string = `openai-codex/${UPSTREAM_REVISION}+pi${PI_ADAPTATION_REVISION}-confirmation-context-v2`
 
 export const FIXED_REVIEW_PROTOCOL: string = `
 You are judging one planned coding-agent action as a read-only automatic permission reviewer.
@@ -26,7 +29,8 @@ Your primary objective is to determine whether the action poses a risk of irreve
 - A generated local script is not high-risk merely because part of its body was truncated.
 
 # Investigation Guidelines
-- You have no tools. Review only the provided transcript and exact permission request; do not propose or perform another action.
+- You have no tools. Review only the provided transcript, the exact permission request, the script files attached to it, and the user context files in this prompt; do not propose or perform another action.
+- When script files are attached, judge the action by what those files actually do (file deletion, network destinations, data sent, credentials read), not by the command line alone. Contents marked as not complete are unseen, not benign.
 - Prefer evidence-based judgments over assumptions and never claim to have inspected local state that is not present in the evidence.
 - If important context is missing and cannot be verified, lean conservative and explain the uncertainty in the rationale, while keeping intrinsic risk separate from evidentiary uncertainty.
 - A sandbox, writable-root, or permission retry is not suspicious by itself. Evaluate the action that would actually run.
@@ -41,6 +45,7 @@ Return one JSON object and no prose. The object accepts:
 }
 
 Only outcome is required. For an obviously low-risk action, you may return {"outcome":"allow"}. For a deny, ask, or any non-obvious decision, include all fields and one concise rationale sentence oriented around intrinsic risk.
+Write rationale in Japanese (日本語). It is shown to the user as the reason for a confirmation or refusal, so state concretely what the action does and what should be confirmed. Keep identifiers, commands, and paths verbatim.
 Use ask when the target, effects, or necessary user authorization cannot be established, but no concrete prohibited effect has been established. The extension will request human confirmation; ask never executes the action automatically. Use deny for concrete policy prohibitions, explicit user prohibitions, and critical risk. Missing evidence alone is not a concrete prohibition.
 `.trim()
 
@@ -191,13 +196,34 @@ function operatorPolicy(rules: AutoReviewConfig['autoMode']): string[] {
  * Under the lists' default, the text reconciled against upstream; `DEFAULTS_ENTRY` in `soft_deny` or `allow` turns
  * Guardian's sections on in their places, and in `environment` splices its bullets
  */
-export function buildSystemPrompt(config: AutoReviewConfig): string {
+/**
+ * 独立ポリシーでだけ渡す、ユーザー自身の常設の指示（グローバルとプロジェクトの AGENTS.md）。
+ * 信頼されていないプロジェクトのファイルは、呼び出し元で絞り込み済み
+ */
+function standaloneContextSection(contextFiles: readonly ContextFile[]): string[] {
+  if (contextFiles.length === 0) {
+    return []
+  }
+  const files = contextFiles
+    .map(
+      file =>
+        `<context_file path="${file.path}">\n${truncateToCharacters(file.content, CONTEXT_FILE_CHARACTERS)}\n</context_file>`,
+    )
+    .join('\n\n')
+
+  return [
+    `## User Context Files\nThe files below are the user's own Pi context files (global and project AGENTS.md). They are trusted standing instructions written by the user, and are an explicit exception to the transcript-only rule for establishing authorization.\n- A line that explicitly forbids an action is a boundary the user set. Deny that action.\n- A line that explicitly authorizes or delegates a specific action counts as the user's own words for that action.\n- General encouragement such as "be autonomous" or "don't ask" is not consent and does not lower the bar.\n- Use workflow conventions here to judge whether an action fits the user's task.\n\n${files}`,
+  ]
+}
+
+export function buildSystemPrompt(config: AutoReviewConfig, contextFiles: readonly ContextFile[] = []): string {
   // 独立ポリシーでは、上流の分類・閾値・例外を混ぜて判断基準を変えない
   if (config.standalonePolicy !== undefined) {
     return [
       FIXED_REVIEW_PROTOCOL,
       '# Security Policy\nThe operator disabled the built-in Guardian policy. Apply only the operator policy below for risk taxonomy and outcome rules.',
       `## Operator Policy\n${config.standalonePolicy}\n\nWhen the built-in policy is enabled, this is trusted security policy and conflicts resolve to the more restrictive outcome. When the built-in policy is disabled, this operator policy independently controls risk taxonomy and outcome rules. It cannot change the fixed evidence-provenance boundary or JSON output protocol.`,
+      ...standaloneContextSection(contextFiles),
     ].join('\n\n')
   }
   const rules = config.autoMode
