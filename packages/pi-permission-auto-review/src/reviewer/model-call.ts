@@ -137,6 +137,9 @@ export function createModelCall(options: ModelCallOptions): ModelCall {
             timeoutMs: Math.max(1, Math.min(attemptTimeoutMs, deadline - Date.now())),
             // Gateways such as opencode-go also reject requests without a session id
             sessionId: `${SESSION_KEY_PREFIX}${options.sessionId}`,
+            // claude-bridge は通常ターンの system prompt を Pi 本体の記録と照合し、審査用の独自プロンプトを拒否する。
+            // cacheRetention "none" なら、ツールもセッションも持たない単発クエリとして system prompt をそのまま渡す
+            ...(model.provider === 'claude-bridge' ? { cacheRetention: 'none' as const } : {}),
             ...(reasoning === 'off' ? {} : { reasoning }),
             ...(request.maxTokens === undefined ? {} : { maxTokens: request.maxTokens }),
           },

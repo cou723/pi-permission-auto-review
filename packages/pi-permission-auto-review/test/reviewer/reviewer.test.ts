@@ -44,6 +44,17 @@ describe('permission reviewer', () => {
     })
   })
 
+  it('sends a claude-bridge review as a one-shot query that keeps its own system prompt', async () => {
+    // claude-bridge は通常ターンの system prompt を Pi 本体の記録と照合し、審査用の独自プロンプトを拒否する
+    const bridge = createHarness({ modelProvider: 'claude-bridge' })
+    expect((await bridge.authorize()).verdict).toEqual({ kind: 'allow' })
+    expect(bridge.streamSimple.mock.calls[0]?.[2]).toMatchObject({ cacheRetention: 'none' })
+
+    const other = createHarness()
+    await other.authorize()
+    expect(other.streamSimple.mock.calls[0]?.[2]).not.toHaveProperty('cacheRetention')
+  })
+
   it('returns a denial that teaches and forbids workarounds, without writing the rationale to the log', async () => {
     const { verdict, entries } = await createHarness({ replies: [reply(DENY)] }).authorize()
 

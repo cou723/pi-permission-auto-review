@@ -137,6 +137,8 @@ interface ReviewerHarnessOptions {
   turnSignal?: AbortSignal
   contextWindow?: number
   thinkingLevelMap?: ThinkingLevelMap
+  /** 解決されるレビューモデルのプロバイダー。既定は custom-review */
+  modelProvider?: string
 }
 
 export function createReviewerHarness(options: ReviewerHarnessOptions): ReviewerHarness {
@@ -156,7 +158,7 @@ export function createReviewerHarness(options: ReviewerHarnessOptions): Reviewer
   }))
   const model = {
     id: 'review-model',
-    provider: 'custom-review',
+    provider: options.modelProvider ?? 'custom-review',
     api: 'openai-responses',
     reasoning: true,
     contextWindow: options.contextWindow ?? 200_000,
