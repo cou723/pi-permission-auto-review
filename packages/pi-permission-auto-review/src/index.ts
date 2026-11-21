@@ -31,7 +31,7 @@ type Tally = Record<AuthorizerVerdict['kind'], number>
 /** One reviewer per applied config, so a config change swaps the registered link without a reload */
 interface Generation {
   /** The session's live context: `signal` and `ui` are read when used, not when the generation is made */
-  runtime: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager' | 'signal' | 'ui'>
+  runtime: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager' | 'signal' | 'hasUI' | 'ui'>
   config: AutoReviewConfig | undefined
   controller: AbortController
   resetTurn: () => void

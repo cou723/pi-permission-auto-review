@@ -16,7 +16,7 @@ type FailureCategory = 'provider-unresolved' | 'model-unresolved' | CallFailure
 export interface ReviewerRuntime {
   config: AutoReviewConfig
   /** Read at every review, since `signal` belongs to the turn in progress */
-  context: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager' | 'signal'>
+  context: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager' | 'signal' | 'hasUI' | 'ui'>
   /** The context files the user's trust covers, as of the latest run */
   contextFiles: () => readonly ContextFile[]
   /** Aborted when the reviewer is replaced or the session ends */
@@ -153,6 +153,16 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): PermissionRe
       }
 
       conversation = result.conversation
+      if (result.kind === 'defer') {
+        // ask は拒否回数に加算せず、別モデルでも再審査しない
+        limiter.recordNonDenial()
+        log.review(DECISION_EVENT, { ...entryBase, outcome: 'defer', durationMs, ...diagnostics })
+        if (runtime.context.hasUI) {
+          runtime.context.ui.notify(`権限確認: ${result.reason}`, 'info')
+        }
+
+        return { kind: 'defer' }
+      }
       if (result.kind === 'allow') {
         limiter.recordNonDenial()
         log.review(DECISION_EVENT, { ...entryBase, outcome: 'allow', durationMs, ...diagnostics })

@@ -46,6 +46,12 @@ const fallbackSchema = v.strictObject({
 const fileSchema = v.strictObject({
   $schema: v.optional(v.pipe(v.string(), v.minLength(1))),
   preset: v.optional(v.picklist(PRESET_NAMES)),
+  standalonePolicy: v.optional(
+    v.pipe(
+      nonBlankSchema,
+      v.description('codex の既定の分類・閾値を使わない独立ポリシー。claude-code プリセットや autoMode と混在不可。'),
+    ),
+  ),
   provider: v.optional(nonBlankSchema),
   model: v.optional(nonBlankSchema),
   reasoning: v.optional(v.picklist(REASONING_LEVELS)),
@@ -102,6 +108,8 @@ export interface FallbackConfig {
 export interface AutoReviewConfig {
   $schema?: string | undefined
   preset: PresetName
+  /** 上流の分類・閾値・例外を混ぜず、この本文だけで危険度と判定を決める */
+  standalonePolicy?: string | undefined
   provider: string
   model: string
   reasoning: ReasoningLevel
@@ -127,10 +135,27 @@ function formatIssues(issues: v.BaseIssue<unknown>[]): string {
   return issues.map(issue => `${v.getDotPath(issue) ?? '(root)'}: ${issue.message}`).join('; ')
 }
 
+const STANDALONE_CONFLICT = 'standalonePolicy requires the codex preset without autoMode rules'
+
+/** 独立ポリシーと別プリセット・分類別ルールの混在は、暗黙の無視ではなく設定エラーにする */
+function standaloneConflict(config: AutoReviewConfigFile): string | undefined {
+  if (config.standalonePolicy === undefined) {
+    return undefined
+  }
+
+  return config.preset === 'claude-code' || Object.keys(config.autoMode ?? {}).length > 0
+    ? STANDALONE_CONFLICT
+    : undefined
+}
+
 export function validateConfigFile(value: unknown): ParseResult<AutoReviewConfigFile> {
   const parsed = v.safeParse(fileSchema, value)
+  if (!parsed.success) {
+    return { ok: false, issue: formatIssues(parsed.issues) }
+  }
+  const conflict = standaloneConflict(parsed.output)
 
-  return parsed.success ? { ok: true, config: parsed.output } : { ok: false, issue: formatIssues(parsed.issues) }
+  return conflict === undefined ? { ok: true, config: parsed.output } : { ok: false, issue: conflict }
 }
 
 export function parseConfigFile(source: string): ParseResult<AutoReviewConfigFile> {
@@ -146,7 +171,14 @@ export function parseConfigFile(source: string): ParseResult<AutoReviewConfigFil
 
 /** Project fields override global ones, and a project rule list the global list of its name */
 export function mergeConfig(global: AutoReviewConfigFile, project: AutoReviewConfigFile): AutoReviewConfig {
-  return v.parse(configSchema, { ...global, ...project, autoMode: { ...global.autoMode, ...project.autoMode } })
+  const merged = { ...global, ...project, autoMode: { ...global.autoMode, ...project.autoMode } }
+  // それぞれは妥当でも、組み合わせると混在になり得る（例：グローバルの独立ポリシー＋プロジェクトの autoMode）
+  const conflict = standaloneConflict(merged)
+  if (conflict !== undefined) {
+    throw new Error(conflict)
+  }
+
+  return v.parse(configSchema, merged)
 }
 
 export function buildJsonSchema(): Record<string, unknown> {
@@ -156,5 +188,16 @@ export function buildJsonSchema(): Record<string, unknown> {
     ignoreActions: ['trim'],
   })
 
-  return { $schema, $id: CONFIG_SCHEMA_URL, ...schema }
+  return {
+    $schema,
+    $id: CONFIG_SCHEMA_URL,
+    ...schema,
+    // valibot からは出せない項目間の制約。standaloneConflict と同じ条件をエディターへ伝える
+    allOf: [
+      {
+        if: { required: ['standalonePolicy'] },
+        then: { properties: { preset: { const: 'codex' }, autoMode: { maxProperties: 0 } } },
+      },
+    ],
+  }
 }

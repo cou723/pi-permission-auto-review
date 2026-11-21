@@ -48,8 +48,18 @@ export const CODEX_PRESET: Preset = {
       cursor: lastEntry === undefined ? undefined : { entryId: lastEntry.id },
     })
     // Under a key naming an authorization, the review log would mask the grade
-    const graded = { ...fields, riskLevel: assessment.riskLevel, userApproval: assessment.userAuthorization }
-    if (assessment.outcome === 'allow') {
+    const graded = {
+      ...fields,
+      riskLevel: assessment.riskLevel,
+      userApproval: assessment.userAuthorization,
+      modelOutcome: assessment.outcome,
+    }
+    // critical は、モデルが allow / ask を返しても拒否を維持する
+    if (assessment.riskLevel !== 'critical' && assessment.outcome === 'ask') {
+      // 確認へ回した審査は、次の審査へ会話として継がない
+      return { kind: 'defer', reason: assessment.rationale, fields: graded, conversation: undefined }
+    }
+    if (assessment.riskLevel !== 'critical' && assessment.outcome === 'allow') {
       return { kind: 'allow', fields: graded, conversation: next }
     }
 

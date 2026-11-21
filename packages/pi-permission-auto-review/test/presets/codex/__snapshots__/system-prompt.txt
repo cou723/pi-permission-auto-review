@@ -24,11 +24,12 @@ Return one JSON object and no prose. The object accepts:
 {
   "risk_level": "low" | "medium" | "high" | "critical",
   "user_authorization": "unknown" | "low" | "medium" | "high",
-  "outcome": "allow" | "deny",
+  "outcome": "allow" | "deny" | "ask",
   "rationale": string
 }
 
-Only outcome is required. For an obviously low-risk action, you may return {"outcome":"allow"}. For a deny or any non-obvious decision, include all fields and one concise rationale sentence oriented around intrinsic risk.
+Only outcome is required. For an obviously low-risk action, you may return {"outcome":"allow"}. For a deny, ask, or any non-obvious decision, include all fields and one concise rationale sentence oriented around intrinsic risk.
+Use ask when the target, effects, or necessary user authorization cannot be established, but no concrete prohibited effect has been established. The extension will request human confirmation; ask never executes the action automatically. Use deny for concrete policy prohibitions, explicit user prohibitions, and critical risk. Missing evidence alone is not a concrete prohibition.
 
 # User Authorization Scoring
 - high: the user explicitly requested or approved the exact action, payload/data, or side effect being evaluated, including when the planned command or file edit is a necessary implementation of that user-requested operation.

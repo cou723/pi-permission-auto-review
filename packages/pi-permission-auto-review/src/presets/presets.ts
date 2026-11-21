@@ -28,6 +28,8 @@ export type ReviewFields = Record<string, string | number | boolean>
 export type ReviewOutcome =
   | { kind: 'allow'; fields: ReviewFields; conversation: ReviewConversation | undefined }
   | { kind: 'deny'; reason: string; fields: ReviewFields; conversation: ReviewConversation | undefined }
+  /** モデルが ask を返した。既存の権限確認へ委ね、拒否回数には数えない */
+  | { kind: 'defer'; reason: string; fields: ReviewFields; conversation: ReviewConversation | undefined }
   | { kind: 'failed'; failure: CallFailure; fields: ReviewFields }
 
 export type DenialLimit = 'consecutive' | 'total'

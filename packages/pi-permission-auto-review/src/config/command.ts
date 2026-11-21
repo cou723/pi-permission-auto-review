@@ -384,6 +384,8 @@ function showConfig(ctx: ExtensionCommandContext, active: AutoReviewConfig | und
   const layers = { global: global.config, project: project.config }
   const lines = SETTINGS.map(setting => `${setting.key}=${setting.format(active)} (${originOf(layers, setting)})`)
   lines.push(`fallback=${JSON.stringify(active.fallback ?? false)}`)
+  // 本文は長く機微になり得るので、設定の有無だけを示す
+  lines.push(`standalonePolicy=${active.standalonePolicy === undefined ? 'unset' : 'set'}`)
   const ignored = projectTrusted ? '' : ' (ignored until Pi trusts this project)'
   ctx.ui.notify(
     `permission-auto-review:\n${lines.join('\n')}\nglobal=${global.path}\nproject=${project.path}${ignored}`,

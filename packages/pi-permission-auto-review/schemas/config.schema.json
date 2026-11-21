@@ -12,6 +12,11 @@
       "type": "string",
       "default": "codex"
     },
+    "standalonePolicy": {
+      "type": "string",
+      "minLength": 1,
+      "description": "codex の既定の分類・閾値を使わない独立ポリシー。claude-code プリセットや autoMode と混在不可。"
+    },
     "provider": {
       "type": "string",
       "minLength": 1
@@ -124,5 +129,22 @@
     }
   },
   "required": [],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "required": ["standalonePolicy"]
+      },
+      "then": {
+        "properties": {
+          "preset": {
+            "const": "codex"
+          },
+          "autoMode": {
+            "maxProperties": 0
+          }
+        }
+      }
+    }
+  ]
 }
