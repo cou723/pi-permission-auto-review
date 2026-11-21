@@ -1,5 +1,7 @@
 node_modules
 dist
+!packages/pi-permission-auto-review/dist/
+!packages/pi-permission-auto-review/dist/**
 coverage
 *.tgz
 
