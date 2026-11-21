@@ -8,6 +8,7 @@ import { PRESETS } from '../presets/presets.js'
 import { createModelCall } from './model-call.js'
 import { resolveReviewModel } from './model.js'
 import { createReviewRouter } from './review-router.js'
+import { isSafeGitRead, safeGitReadCandidate } from './safe-git-read.js'
 
 const DECISION_EVENT = 'auto_review.decision'
 
@@ -16,7 +17,7 @@ type FailureCategory = 'provider-unresolved' | 'model-unresolved' | CallFailure
 export interface ReviewerRuntime {
   config: AutoReviewConfig
   /** Read at every review, since `signal` belongs to the turn in progress */
-  context: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager' | 'signal' | 'hasUI' | 'ui'>
+  context: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager' | 'signal' | 'cwd' | 'hasUI' | 'ui'>
   /** 同じセッションで実行中のツールから、入れ子を含む引数全体を取り出す。取得できなければ undefined */
   getToolInput?: ((details: PromptPermissionDetails) => unknown) | undefined
   /** The context files the user's trust covers, as of the latest run */
@@ -128,6 +129,29 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): PermissionRe
         })
 
         return { kind: 'deny', reason: refusal }
+      }
+
+      const toolInput = runtime.getToolInput?.(details)
+      // Git の起動を待つのは候補だけ。それ以外の要求は上流と同じ時点で審査を始める
+      const gitSignal = AbortSignal.any([
+        runtime.sessionSignal,
+        ...(runtime.context.signal === undefined ? [] : [runtime.context.signal]),
+      ])
+      if (
+        safeGitReadCandidate(details, toolInput) !== undefined &&
+        (await isSafeGitRead(details, toolInput, runtime.context, gitSignal)) &&
+        !gitSignal.aborted
+      ) {
+        limiter.recordNonDenial()
+        // decisionSource は、モデルを呼ばずに許可したことを示す
+        log.review(DECISION_EVENT, {
+          ...entryBase,
+          outcome: 'allow',
+          decisionSource: 'safe-git-read',
+          durationMs: elapsed(),
+        })
+
+        return { kind: 'allow' }
       }
 
       const result = await review(details)
