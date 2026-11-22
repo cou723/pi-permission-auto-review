@@ -3295,7 +3295,8 @@ async function runReview(runtime, preset, details, conversation) {
 				conversation,
 				contextWindow: model.contextWindow
 			}, complete),
-			usage
+			usage,
+			modelId: model.id
 		};
 	} finally {
 		clearTimeout(timeout);
@@ -3323,7 +3324,8 @@ async function settleUnlessCancelled(runtime, run) {
 		kind: "failed",
 		failure: "cancelled",
 		...result.fields === void 0 ? {} : { fields: result.fields },
-		...result.usage === void 0 ? {} : { usage: result.usage }
+		...result.usage === void 0 ? {} : { usage: result.usage },
+		...result.modelId === void 0 ? {} : { modelId: result.modelId }
 	};
 }
 function createPermissionReviewer(runtime) {
@@ -3383,6 +3385,7 @@ function createPermissionReviewer(runtime) {
 				policyRevision: preset.policyRevision,
 				contextSource: "active-branch",
 				...result.fields,
+				...result.modelId === void 0 ? {} : { modelId: result.modelId },
 				...result.usage === void 0 ? {} : { usage: result.usage }
 			};
 			if (result.kind === "failed") {

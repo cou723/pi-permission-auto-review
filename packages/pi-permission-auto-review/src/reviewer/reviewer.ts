@@ -35,8 +35,8 @@ export interface PermissionReviewer {
 }
 
 type ReviewResult =
-  | (Exclude<ReviewOutcome, { kind: 'failed' }> & { usage: CallUsage })
-  | { kind: 'failed'; failure: FailureCategory; fields?: ReviewFields; usage?: CallUsage }
+  | (Exclude<ReviewOutcome, { kind: 'failed' }> & { usage: CallUsage; modelId: string })
+  | { kind: 'failed'; failure: FailureCategory; fields?: ReviewFields; usage?: CallUsage; modelId?: string }
 
 async function runReview(
   runtime: ReviewerRuntime,
@@ -97,7 +97,7 @@ async function runReview(
       complete,
     )
 
-    return { ...outcome, usage }
+    return { ...outcome, usage, modelId: model.id }
   } finally {
     clearTimeout(timeout)
   }
@@ -130,6 +130,7 @@ async function settleUnlessCancelled(
     failure: 'cancelled',
     ...(result.fields === undefined ? {} : { fields: result.fields }),
     ...(result.usage === undefined ? {} : { usage: result.usage }),
+    ...(result.modelId === undefined ? {} : { modelId: result.modelId }),
   }
 }
 
@@ -209,6 +210,7 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): PermissionRe
         policyRevision: preset.policyRevision,
         contextSource: 'active-branch',
         ...result.fields,
+        ...(result.modelId === undefined ? {} : { modelId: result.modelId }),
         ...(result.usage === undefined ? {} : { usage: result.usage }),
       }
       if (result.kind === 'failed') {

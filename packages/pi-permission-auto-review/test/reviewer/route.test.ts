@@ -86,6 +86,31 @@ it('logs the conversation provider and the model the review actually used', asyn
   expect(entries[0]?.[1]).toMatchObject({
     provider: 'custom-review',
     model: 'routed-model',
+    modelId: 'review-model',
+    conversationProvider: 'openai',
+  })
+})
+
+it('logs the resolved model ID alongside the wildcard model pattern', async () => {
+  vi.useFakeTimers({ now: 0 })
+  const available = [
+    { provider: 'openai', id: 'gpt-5.6-luna', api: 'openai-responses', reasoning: true, contextWindow: 200_000 },
+    { provider: 'openai', id: 'gpt-6-luna', api: 'openai-responses', reasoning: true, contextWindow: 200_000 },
+  ] as const
+  const harness = createReviewerHarness({
+    replies: [reply('{"outcome":"allow"}')],
+    config: { routes: [{ conversationProviders: ['openai'], provider: 'openai', model: '*-luna' }] },
+    conversationProvider: 'openai',
+    availableModels: available as never,
+    getProvider: () => ({ id: 'openai' }),
+  })
+  const { verdict, entries } = await harness.authorize()
+
+  expect(verdict).toEqual({ kind: 'allow' })
+  expect(entries[0]?.[1]).toMatchObject({
+    provider: 'openai',
+    model: '*-luna',
+    modelId: 'gpt-6-luna',
     conversationProvider: 'openai',
   })
 })

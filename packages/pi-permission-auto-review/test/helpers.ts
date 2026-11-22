@@ -139,6 +139,8 @@ interface ReviewerHarnessOptions {
   thinkingLevelMap?: ThinkingLevelMap
   /** 解決されるレビューモデルのプロバイダー。既定は custom-review */
   modelProvider?: string
+  /** 利用可能なモデル一覧。未指定なら [model] */
+  availableModels?: Model<Api>[]
   /** 会話に使っているモデルの提供元。未指定なら会話のモデルなし */
   conversationProvider?: string
 }
@@ -167,7 +169,9 @@ export function createReviewerHarness(options: ReviewerHarnessOptions): Reviewer
     thinkingLevelMap: options.thinkingLevelMap,
   }
   const registry = {
-    find: () => model,
+    find: (provider: string, id: string) =>
+      options.availableModels?.find(m => m.provider === provider && m.id === id) ?? model,
+    getAvailable: () => options.availableModels ?? [model],
     getProvider: options.getProvider ?? (() => ({ id: 'custom-review' })),
     streamSimple,
   } as unknown as ModelRegistry
