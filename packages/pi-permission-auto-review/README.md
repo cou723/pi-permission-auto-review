@@ -55,6 +55,7 @@ Optional. `~/.pi/agent/extensions/pi-permission-auto-review/config.json` and `.p
 | `attemptTimeoutMs` | —                                       | Time limit for one call; without it, only `timeoutMs` applies |
 | `followUpReviews`  | `auto`                                  | Continue the reviewer's conversation across asks; see below   |
 | `autoMode`         | —                                       | Rules beside or instead of the preset's own; see below        |
+| `routes`           | —                                       | Reviewer per conversation provider; see below                 |
 
 `autoMode` takes the same four lists as Claude Code's own `autoMode` settings, so rules copied from there paste in. `environment` tells the reviewer what lies inside your trust boundary, `hard_deny` rules always block, and `soft_deny` rules block unless an `allow` exception or the user's explicit consent clears them. Each is a list of prose rules: the entry `"$defaults"` stands for the preset's built-in rules, and a list without it replaces them. Under `codex`, `"$defaults"` keeps the Guardian policy's sections where they are, and your other rules join it as operator policy.
 
@@ -65,6 +66,19 @@ Optional. `~/.pi/agent/extensions/pi-permission-auto-review/config.json` and `.p
     "environment": ["$defaults", "Source control: github.com/acme and every repository under it"],
     "soft_deny": ["$defaults", "Never run database migrations by hand"]
   }
+}
+```
+
+`routes` picks the reviewer from the provider of the model the conversation is using, so a review spends the same subscription as the conversation. Each review takes the first route whose `conversationProviders` lists that provider, with the route's `reasoning` and `timeoutMs` falling back to the top-level ones; with no match, the top-level `provider` and `model` review. A `model` with `*` resolves to the latest available version, comparing the numbers in the ids. A route whose model is unavailable defers to the human prompt; no other model is tried.
+
+```json
+{
+  "provider": "strata",
+  "model": "swift-1.5-iq3_xxs",
+  "routes": [
+    { "conversationProviders": ["openai"], "provider": "openai", "model": "*-luna", "reasoning": "high" },
+    { "conversationProviders": ["claude-bridge", "anthropic"], "provider": "claude-bridge", "model": "claude-haiku-*" }
+  ]
 }
 ```
 

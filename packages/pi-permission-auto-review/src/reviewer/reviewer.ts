@@ -9,7 +9,7 @@ import { findToolCallInput } from '../presets/session.js'
 import { createModelCall } from './model-call.js'
 import { resolveReviewModel } from './model.js'
 import { collectScriptEvidence, confirmationNotice, failureNotice } from './review-context.js'
-import { createReviewRouter } from './review-router.js'
+import { selectReviewTarget } from './route.js'
 import { isSafeGitRead, safeGitReadCandidate } from './safe-git-read.js'
 
 const DECISION_EVENT = 'auto_review.decision'
@@ -19,7 +19,7 @@ type FailureCategory = 'provider-unresolved' | 'model-unresolved' | CallFailure
 export interface ReviewerRuntime {
   config: AutoReviewConfig
   /** Read at every review, since `signal` belongs to the turn in progress */
-  context: Pick<ExtensionContext, 'modelRegistry' | 'sessionManager' | 'signal' | 'cwd' | 'hasUI' | 'ui'>
+  context: Pick<ExtensionContext, 'model' | 'modelRegistry' | 'sessionManager' | 'signal' | 'cwd' | 'hasUI' | 'ui'>
   /** 同じセッションで実行中のツールから、入れ子を含む引数全体を取り出す。取得できなければ undefined */
   getToolInput?: ((details: PromptPermissionDetails) => unknown) | undefined
   /** The context files the user's trust covers, as of the latest run */
@@ -34,7 +34,7 @@ export interface PermissionReviewer {
   resetTurn: () => void
 }
 
-export type ReviewResult =
+type ReviewResult =
   | (Exclude<ReviewOutcome, { kind: 'failed' }> & { usage: CallUsage })
   | { kind: 'failed'; failure: FailureCategory; fields?: ReviewFields; usage?: CallUsage }
 
@@ -103,6 +103,36 @@ async function runReview(
   }
 }
 
+/** 成功応答や例外とキャンセルが競合しても、キャンセル済みなら失敗として扱う */
+async function settleUnlessCancelled(
+  runtime: ReviewerRuntime,
+  run: () => Promise<ReviewResult>,
+): Promise<ReviewResult> {
+  const cancelled = (): boolean => runtime.sessionSignal.aborted || runtime.context.signal?.aborted === true
+  if (cancelled()) {
+    return { kind: 'failed', failure: 'cancelled' }
+  }
+  let result: ReviewResult
+  try {
+    result = await run()
+  } catch (error) {
+    if (!cancelled()) {
+      throw error
+    }
+    result = { kind: 'failed', failure: 'cancelled' }
+  }
+  if (!cancelled()) {
+    return result
+  }
+
+  return {
+    kind: 'failed',
+    failure: 'cancelled',
+    ...(result.fields === undefined ? {} : { fields: result.fields }),
+    ...(result.usage === undefined ? {} : { usage: result.usage }),
+  }
+}
+
 export function createPermissionReviewer(runtime: ReviewerRuntime): PermissionReviewer {
   const { config } = runtime
   const preset = PRESETS[config.preset]
@@ -110,19 +140,20 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): PermissionRe
   const limiter = preset.createLimiter()
   // As upstream keeps it: concurrent reviews each continue the conversation they started from, and the last to finish wins
   let conversation: ReviewConversation | undefined
-  // 切替時は会話を共有せず、別プロバイダーへ過去の回答を持ち込まない
-  const review = createReviewRouter(runtime, async (attemptRuntime, details) =>
-    runReview(
-      attemptRuntime,
-      preset,
-      details,
-      config.fallback === undefined || config.fallback === false ? conversation : undefined,
-    ),
-  )
+  // 会話の提供元が変わって審査モデルが替わったら、別のモデルへ過去の回答を持ち込まない
+  let conversationModel: string | undefined
 
   const authorize: Authorizer['authorize'] = async (details, _query, log) => {
     const startedAt = Date.now()
-    const entryBase = { requestId: details.requestId, provider: config.provider, model: config.model }
+    const conversationProvider = runtime.context.model?.provider
+    const target = selectReviewTarget(config, conversationProvider)
+    const targetModel = `${target.provider}/${target.model}`
+    const entryBase = {
+      requestId: details.requestId,
+      provider: target.provider,
+      model: target.model,
+      ...(conversationProvider === undefined ? {} : { conversationProvider }),
+    }
     const elapsed = (): number => Math.max(0, Date.now() - startedAt)
     const logFailure = (entry: Record<string, unknown>): void => {
       log.review(DECISION_EVENT, entry)
@@ -165,13 +196,19 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): PermissionRe
         return { kind: 'allow' }
       }
 
-      const result = await review(details)
+      const result = await settleUnlessCancelled(runtime, async () =>
+        runReview(
+          { ...runtime, config: target },
+          preset,
+          details,
+          conversationModel === targetModel ? conversation : undefined,
+        ),
+      )
       const durationMs = elapsed()
       const diagnostics = {
         policyRevision: preset.policyRevision,
         contextSource: 'active-branch',
         ...result.fields,
-        ...result.diagnostics,
         ...(result.usage === undefined ? {} : { usage: result.usage }),
       }
       if (result.kind === 'failed') {
@@ -195,8 +232,9 @@ export function createPermissionReviewer(runtime: ReviewerRuntime): PermissionRe
       }
 
       conversation = result.conversation
+      conversationModel = targetModel
       if (result.kind === 'defer') {
-        // ask は拒否回数に加算せず、別モデルでも再審査しない
+        // ask は拒否回数に加算しない
         limiter.recordNonDenial()
         log.review(DECISION_EVENT, { ...entryBase, outcome: 'defer', durationMs, ...diagnostics })
         if (runtime.context.hasUI) {

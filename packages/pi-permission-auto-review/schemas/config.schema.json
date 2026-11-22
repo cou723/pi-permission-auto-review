@@ -8,7 +8,10 @@
       "minLength": 1
     },
     "preset": {
-      "enum": ["codex", "claude-code"],
+      "enum": [
+        "codex",
+        "claude-code"
+      ],
       "type": "string",
       "default": "codex"
     },
@@ -26,7 +29,15 @@
       "minLength": 1
     },
     "reasoning": {
-      "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+      "enum": [
+        "off",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
       "type": "string"
     },
     "timeoutMs": {
@@ -47,45 +58,60 @@
       "maximum": 300000
     },
     "followUpReviews": {
-      "enum": ["auto", "always", "off"],
+      "enum": [
+        "auto",
+        "always",
+        "off"
+      ],
       "type": "string",
       "default": "auto"
     },
-    "fallback": {
-      "anyOf": [
-        {
-          "const": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "provider": {
+    "routes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "conversationProviders": {
+            "type": "array",
+            "items": {
               "type": "string",
               "minLength": 1
             },
-            "model": {
-              "type": "string",
-              "minLength": 1
-            },
-            "reasoning": {
-              "enum": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-              "type": "string"
-            },
-            "timeoutMs": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 300000
-            },
-            "cooldownMs": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 300000
-            }
+            "minItems": 1
           },
-          "required": ["provider", "model", "reasoning", "timeoutMs", "cooldownMs"],
-          "additionalProperties": false
-        }
-      ]
+          "provider": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reasoning": {
+            "enum": [
+              "off",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "type": "string"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300000
+          }
+        },
+        "required": [
+          "conversationProviders",
+          "provider",
+          "model"
+        ],
+        "additionalProperties": false
+      }
     },
     "autoMode": {
       "type": "object",
@@ -96,7 +122,9 @@
             "type": "string",
             "minLength": 1
           },
-          "default": ["$defaults"]
+          "default": [
+            "$defaults"
+          ]
         },
         "allow": {
           "type": "array",
@@ -104,7 +132,9 @@
             "type": "string",
             "minLength": 1
           },
-          "default": ["$defaults"]
+          "default": [
+            "$defaults"
+          ]
         },
         "soft_deny": {
           "type": "array",
@@ -112,7 +142,9 @@
             "type": "string",
             "minLength": 1
           },
-          "default": ["$defaults"]
+          "default": [
+            "$defaults"
+          ]
         },
         "hard_deny": {
           "type": "array",
@@ -120,7 +152,9 @@
             "type": "string",
             "minLength": 1
           },
-          "default": ["$defaults"]
+          "default": [
+            "$defaults"
+          ]
         }
       },
       "required": [],
@@ -133,7 +167,9 @@
   "allOf": [
     {
       "if": {
-        "required": ["standalonePolicy"]
+        "required": [
+          "standalonePolicy"
+        ]
       },
       "then": {
         "properties": {

@@ -36,7 +36,6 @@ const config: UserConfig[] = defineConfig([
     entry: {
       review: 'src/review.ts',
       'review-context': 'src/reviewer/review-context.ts',
-      'review-router': 'src/reviewer/review-router.ts',
       'safe-git-read': 'src/reviewer/safe-git-read.ts',
     },
   },

@@ -1,6 +1,52 @@
-import { c as DEFAULT_CONFIG, i as TranscriptCursor, s as AutoReviewConfig, t as ContextFile } from "./presets-BMhvqukm.js";
+import "./review-context-CDC5-K_M.js";
+import "@earendil-works/pi-ai";
 import { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { PromptPermissionDetails } from "@gotgenes/pi-permission-system";
+declare const PRESET_NAMES: readonly ["codex", "claude-code"];
+declare const REASONING_LEVELS: readonly ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+declare const FOLLOW_UP_REVIEW_MODES: readonly ["auto", "always", "off"];
+/** Claude Code's own `autoMode` keys, so a block copied from its settings pastes in */
+declare const RULE_LISTS: readonly ["environment", "allow", "soft_deny", "hard_deny"];
+type PresetName = (typeof PRESET_NAMES)[number];
+type ReasoningLevel = (typeof REASONING_LEVELS)[number];
+type RuleListName = (typeof RULE_LISTS)[number];
+interface ReviewRoute {
+  /** 会話のモデルの提供元。どれかに一致したら、この対応を使う */
+  conversationProviders: string[];
+  provider: string;
+  /** `*` を含む場合は、利用可能なモデルから一致する最新の版を選ぶ */
+  model: string;
+  /** 省略時は最上位の reasoning / timeoutMs */
+  reasoning?: ReasoningLevel | undefined;
+  timeoutMs?: number | undefined;
+}
+interface AutoReviewConfig {
+  $schema?: string | undefined;
+  preset: PresetName;
+  /** 上流の分類・閾値・例外を混ぜず、この本文だけで危険度と判定を決める */
+  standalonePolicy?: string | undefined;
+  provider: string;
+  model: string;
+  reasoning: ReasoningLevel;
+  timeoutMs: number;
+  maxRetries: number;
+  attemptTimeoutMs?: number | undefined;
+  followUpReviews: (typeof FOLLOW_UP_REVIEW_MODES)[number];
+  /** 会話の提供元ごとの審査モデル。一致しなければ provider / model */
+  routes?: ReviewRoute[] | undefined;
+  /** Each list still holds `DEFAULTS_ENTRY` where the preset's built-in entries belong */
+  autoMode: Record<RuleListName, string[]>;
+}
+export declare const DEFAULT_CONFIG: AutoReviewConfig;
+/** Where a review's transcript ended: an entry, and the tool call in it the review judged, if any */
+interface TranscriptCursor {
+  entryId: string;
+  toolCallId?: string | undefined;
+}
+interface ContextFile {
+  path: string;
+  content: string;
+}
 declare const POLICY_REVISION$1: string;
 export declare const FIXED_REVIEW_PROTOCOL: string;
 declare function buildSystemPrompt$1(config: AutoReviewConfig, contextFiles?: readonly ContextFile[]): string;
@@ -78,5 +124,5 @@ declare function buildSystemPrompt(rules: AutoReviewConfig["autoMode"], contextF
 declare const THINKING_PROMPT = "Second pass. The fast pass above leans toward blocking and ignores user intent and ALLOW exceptions, so its answer is not a finding. Follow the whole process now, keeping in mind that only explicit consent, never implied or suggested, clears a block. Reply with the verdict in the output format: <block>yes</block><category>…</category><reason>…</reason>, or <block>no</block>.";
 /** A full review's first message: the transcript, then the fast-pass instruction */
 declare function buildReviewMessage(transcript: ClaudeCodeTranscript): string;
-export { type AutoReviewConfig, POLICY_REVISION as CLAUDE_CODE_POLICY_REVISION, THINKING_PROMPT as CLAUDE_CODE_THINKING_PROMPT, type ClaudeCodeFastVerdict, type ClaudeCodeTranscript, type ClaudeCodeVerdict, DEFAULT_CONFIG, POLICY_REVISION$1 as POLICY_REVISION, type RenderedTranscript, type ReviewAssessment, type ReviewPrompt, buildReviewMessage as buildClaudeCodeReviewMessage, buildSystemPrompt as buildClaudeCodeSystemPrompt, buildSystemPrompt$1 as buildSystemPrompt, parseFastVerdict as parseClaudeCodeFastVerdict, parseVerdict as parseClaudeCodeVerdict, renderTranscript as renderClaudeCodeTranscript, renderTranscript$1 as renderTranscript };
+export { type AutoReviewConfig, POLICY_REVISION as CLAUDE_CODE_POLICY_REVISION, THINKING_PROMPT as CLAUDE_CODE_THINKING_PROMPT, type ClaudeCodeFastVerdict, type ClaudeCodeTranscript, type ClaudeCodeVerdict, POLICY_REVISION$1 as POLICY_REVISION, type RenderedTranscript, type ReviewAssessment, type ReviewPrompt, buildReviewMessage as buildClaudeCodeReviewMessage, buildSystemPrompt as buildClaudeCodeSystemPrompt, buildSystemPrompt$1 as buildSystemPrompt, parseFastVerdict as parseClaudeCodeFastVerdict, parseVerdict as parseClaudeCodeVerdict, renderTranscript as renderClaudeCodeTranscript, renderTranscript$1 as renderTranscript };
 //# sourceMappingURL=review.d.ts.map

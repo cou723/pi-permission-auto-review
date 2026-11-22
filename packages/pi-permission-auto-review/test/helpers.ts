@@ -139,6 +139,8 @@ interface ReviewerHarnessOptions {
   thinkingLevelMap?: ThinkingLevelMap
   /** 解決されるレビューモデルのプロバイダー。既定は custom-review */
   modelProvider?: string
+  /** 会話に使っているモデルの提供元。未指定なら会話のモデルなし */
+  conversationProvider?: string
 }
 
 export function createReviewerHarness(options: ReviewerHarnessOptions): ReviewerHarness {
@@ -172,6 +174,7 @@ export function createReviewerHarness(options: ReviewerHarnessOptions): Reviewer
   const reviewer = createPermissionReviewer({
     config: mergeConfig({}, { provider: 'custom-review', model: 'review-model', ...options.config }),
     context: {
+      model: options.conversationProvider === undefined ? undefined : { provider: options.conversationProvider },
       modelRegistry: registry,
       sessionManager: { getBranch: () => [...branch], getSessionId: () => 'session-1' },
       signal: options.turnSignal,

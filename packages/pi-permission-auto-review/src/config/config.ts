@@ -33,14 +33,14 @@ const timeoutSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(1), v.maxVa
 const maxRetriesSchema = v.pipe(v.number(), v.safeInteger(), v.minValue(0), v.maxValue(20))
 const rulesSchema = v.array(nonBlankSchema)
 const builtInRulesSchema = v.optional(rulesSchema, () => [DEFAULTS_ENTRY])
-// 優先モデルを利用できないときだけ使う切替先。false は切替なし（上流と同じ単一モデル動作）を明示する。
-const fallbackSchema = v.strictObject({
+// 会話に使っているモデルと同じ提供元（同じサブスクリプションの枠）で審査するための対応表。
+// 審査のたびに先頭から照合し、どれにも一致しなければ provider / model を使う。
+const routeSchema = v.strictObject({
+  conversationProviders: v.pipe(v.array(nonBlankSchema), v.minLength(1)),
   provider: nonBlankSchema,
   model: nonBlankSchema,
-  reasoning: v.picklist(REASONING_LEVELS),
-  timeoutMs: timeoutSchema,
-  /** 優先モデルの障害後、再試行せずに切替先を直接使う時間 */
-  cooldownMs: timeoutSchema,
+  reasoning: v.optional(v.picklist(REASONING_LEVELS)),
+  timeoutMs: v.optional(timeoutSchema),
 })
 
 const fileSchema = v.strictObject({
@@ -59,7 +59,7 @@ const fileSchema = v.strictObject({
   maxRetries: v.optional(maxRetriesSchema),
   attemptTimeoutMs: v.optional(timeoutSchema),
   followUpReviews: v.optional(v.picklist(FOLLOW_UP_REVIEW_MODES)),
-  fallback: v.optional(v.union([v.literal(false), fallbackSchema])),
+  routes: v.optional(v.array(routeSchema)),
   autoMode: v.optional(
     v.strictObject({
       environment: v.optional(rulesSchema),
@@ -96,12 +96,15 @@ const configSchema = v.pipe(
   })),
 )
 
-export interface FallbackConfig {
+export interface ReviewRoute {
+  /** 会話のモデルの提供元。どれかに一致したら、この対応を使う */
+  conversationProviders: string[]
   provider: string
+  /** `*` を含む場合は、利用可能なモデルから一致する最新の版を選ぶ */
   model: string
-  reasoning: ReasoningLevel
-  timeoutMs: number
-  cooldownMs: number
+  /** 省略時は最上位の reasoning / timeoutMs */
+  reasoning?: ReasoningLevel | undefined
+  timeoutMs?: number | undefined
 }
 
 // `isolatedDeclarations` cannot emit a `v.InferOutput` of a private schema; `DEFAULT_CONFIG` keeps the two in step
@@ -117,8 +120,8 @@ export interface AutoReviewConfig {
   maxRetries: number
   attemptTimeoutMs?: number | undefined
   followUpReviews: (typeof FOLLOW_UP_REVIEW_MODES)[number]
-  /** 未設定と false は、切替なしの単一モデル動作 */
-  fallback?: false | FallbackConfig | undefined
+  /** 会話の提供元ごとの審査モデル。一致しなければ provider / model */
+  routes?: ReviewRoute[] | undefined
   /** Each list still holds `DEFAULTS_ENTRY` where the preset's built-in entries belong */
   autoMode: Record<RuleListName, string[]>
 }

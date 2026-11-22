@@ -359,21 +359,6 @@ function _addIssue(context, label, dataset, config$1, other) {
 	else dataset.issues = [issue];
 }
 /**
-* Compares two values using the SameValueZero algorithm, which treats `NaN`
-* as equal to itself unlike `===`.
-*
-* @param value1 The first value.
-* @param value2 The second value.
-*
-* @returns Whether the values are equal.
-*
-* @internal
-*/
-/* @__NO_SIDE_EFFECTS__ */
-function _isSameValueZero(value1, value2) {
-	return value1 === value2 || Number.isNaN(value1) && Number.isNaN(value2);
-}
-/**
 * Joins multiple `expects` values with the given separator.
 *
 * @param values The `expects` values.
@@ -642,23 +627,6 @@ function array(item, message$1) {
 	});
 }
 /* @__NO_SIDE_EFFECTS__ */
-function literal$1(literal_, message$1) {
-	return _standardSchema({
-		kind: "schema",
-		type: "literal",
-		reference: literal$1,
-		expects: /* @__PURE__ */ _stringify(literal_),
-		async: false,
-		literal: literal_,
-		message: message$1,
-		"~run"(dataset, config$1) {
-			if (/* @__PURE__ */ _isSameValueZero(dataset.value, this.literal)) dataset.typed = true;
-			else _addIssue(this, "type", dataset, config$1);
-			return dataset;
-		}
-	});
-}
-/* @__NO_SIDE_EFFECTS__ */
 function number(message$1) {
 	return _standardSchema({
 		kind: "schema",
@@ -808,58 +776,6 @@ function string(message$1) {
 	});
 }
 /**
-* Returns the sub issues of the provided datasets for the union issue.
-*
-* @param datasets The datasets.
-*
-* @returns The sub issues.
-*
-* @internal
-*/
-/* @__NO_SIDE_EFFECTS__ */
-function _subIssues(datasets) {
-	let issues;
-	if (datasets) for (const dataset of datasets) if (issues) for (const issue of dataset.issues) issues.push(issue);
-	else issues = dataset.issues;
-	return issues;
-}
-/* @__NO_SIDE_EFFECTS__ */
-function union(options, message$1) {
-	return _standardSchema({
-		kind: "schema",
-		type: "union",
-		reference: union,
-		expects: /* @__PURE__ */ _joinExpects(options.map((option) => option.expects), "|"),
-		async: false,
-		options,
-		message: message$1,
-		"~run"(dataset, config$1) {
-			let validDataset;
-			let typedDatasets;
-			let untypedDatasets;
-			for (const schema of this.options) {
-				const optionDataset = schema["~run"]({ value: dataset.value }, config$1);
-				if (optionDataset.typed) if (optionDataset.issues) if (typedDatasets) typedDatasets.push(optionDataset);
-				else typedDatasets = [optionDataset];
-				else {
-					validDataset = optionDataset;
-					break;
-				}
-				else if (untypedDatasets) untypedDatasets.push(optionDataset);
-				else untypedDatasets = [optionDataset];
-			}
-			if (validDataset) return validDataset;
-			if (typedDatasets) {
-				if (typedDatasets.length === 1) return typedDatasets[0];
-				_addIssue(this, "type", dataset, config$1, { issues: /* @__PURE__ */ _subIssues(typedDatasets) });
-				dataset.typed = true;
-			} else if (untypedDatasets?.length === 1) return untypedDatasets[0];
-			else _addIssue(this, "type", dataset, config$1, { issues: /* @__PURE__ */ _subIssues(untypedDatasets) });
-			return dataset;
-		}
-	});
-}
-/**
 * Parses an unknown input based on a schema.
 *
 * @param schema The schema to be used.
@@ -957,13 +873,12 @@ const timeoutSchema = pipe(number(), safeInteger(), minValue(1), maxValue(MAX_TI
 const maxRetriesSchema = pipe(number(), safeInteger(), minValue(0), maxValue(20));
 const rulesSchema = array(nonBlankSchema);
 const builtInRulesSchema = optional(rulesSchema, () => [DEFAULTS_ENTRY]);
-const fallbackSchema = strictObject({
+const routeSchema = strictObject({
+	conversationProviders: pipe(array(nonBlankSchema), minLength(1)),
 	provider: nonBlankSchema,
 	model: nonBlankSchema,
-	reasoning: picklist(REASONING_LEVELS),
-	timeoutMs: timeoutSchema,
-	/** 優先モデルの障害後、再試行せずに切替先を直接使う時間 */
-	cooldownMs: timeoutSchema
+	reasoning: optional(picklist(REASONING_LEVELS)),
+	timeoutMs: optional(timeoutSchema)
 });
 const fileSchema = strictObject({
 	$schema: optional(pipe(string(), minLength(1))),
@@ -976,7 +891,7 @@ const fileSchema = strictObject({
 	maxRetries: optional(maxRetriesSchema),
 	attemptTimeoutMs: optional(timeoutSchema),
 	followUpReviews: optional(picklist(FOLLOW_UP_REVIEW_MODES)),
-	fallback: optional(union([literal$1(false), fallbackSchema])),
+	routes: optional(array(routeSchema)),
 	autoMode: optional(strictObject({
 		environment: optional(rulesSchema),
 		allow: optional(rulesSchema),
@@ -3030,7 +2945,7 @@ function showConfig(ctx, active) {
 		project: project.config
 	};
 	const lines = SETTINGS.map((setting) => `${setting.key}=${setting.format(active)} (${originOf(layers, setting)})`);
-	lines.push(`fallback=${JSON.stringify(active.fallback ?? false)}`);
+	lines.push(`routes=${JSON.stringify(active.routes ?? [])}`);
 	lines.push(`standalonePolicy=${active.standalonePolicy === void 0 ? "unset" : "set"}`);
 	const ignored = projectTrusted ? "" : " (ignored until Pi trusts this project)";
 	ctx.ui.notify(`permission-auto-review:\n${lines.join("\n")}\nglobal=${global.path}\nproject=${project.path}${ignored}`, "info");
@@ -3125,6 +3040,28 @@ function registerAutoReviewCommand(pi, controller) {
 
 // src/reviewer/model.ts
 const CODEX_API = "openai-codex-responses";
+/** ID 中の数字列を版として比較する（claude-haiku-5-5 > claude-haiku-4-5、gpt-6-luna > gpt-5.6-luna） */
+function compareVersionsDescending(a, b) {
+	const version = (id) => (id.match(/\d+/g) ?? []).map(Number);
+	const [x, y] = [version(a), version(b)];
+	for (let i = 0; i < Math.max(x.length, y.length); i++) {
+		const diff = (y[i] ?? -1) - (x[i] ?? -1);
+		if (diff !== 0) return diff;
+	}
+	return 0;
+}
+function globPattern(glob) {
+	const source = glob.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+	return new RegExp(`^${source}$`);
+}
+/**
+* `*` を含む ID は、認証済みで利用可能なモデルから一致する最新の版を選ぶ。
+* 世代が更新されるたびに設定を書き直さなくて済むようにするため。
+*/
+function findLatestAvailable(registry, provider, glob) {
+	const pattern = globPattern(glob);
+	return registry.getAvailable().filter((model) => model.provider === provider && pattern.test(model.id)).sort((a, b) => compareVersionsDescending(a.id, b.id))[0];
+}
 /** `codex-auto-review` is hidden from the registry, so it is derived from another model of the Codex provider */
 function resolveReviewModel(registry, config) {
 	const provider = registry.getProvider(config.provider);
@@ -3132,7 +3069,7 @@ function resolveReviewModel(registry, config) {
 		ok: false,
 		category: "provider-unresolved"
 	};
-	const registered = registry.find(config.provider, config.model);
+	const registered = config.model.includes("*") ? findLatestAvailable(registry, config.provider, config.model) : registry.find(config.provider, config.model);
 	if (registered !== void 0) return {
 		ok: true,
 		value: registered
@@ -3157,96 +3094,21 @@ function resolveReviewModel(registry, config) {
 	};
 }
 
-// src/reviewer/review-router.ts
-const UNAVAILABLE = /* @__PURE__ */ new Set([
-	"provider-unresolved",
-	"model-unresolved",
-	"provider-error",
-	"timeout",
-	"attempt-timeout"
-]);
+// src/reviewer/route.ts
 /**
-* 優先モデルで審査し、利用できない場合だけ fallback のモデルで同じ操作を審査する。
-* 障害後は cooldownMs の間、切替先を直接使い、経過後の審査で優先モデルの復旧を確かめる。
+* 会話のモデルの提供元から、この審査に使う設定を決める。
+* 会話と同じサブスクリプションの枠で審査するため、モデルを途中で切り替えても審査のたびに選び直す。
+* 一致する対応がなければ最上位の provider / model を使う。使えないモデルへの切替（フォールバック）はしない。
 */
-function createReviewRouter(runtime, runReview) {
-	const { config } = runtime;
-	const fallback = config.fallback === false ? void 0 : config.fallback;
-	let retryAfter = 0;
-	let probing = false;
-	const cancelled = () => runtime.sessionSignal.aborted || runtime.context.signal?.aborted === true;
-	const cancelledResult = () => ({
-		kind: "failed",
-		failure: "cancelled"
-	});
-	return async (details) => {
-		const attempts = [];
-		let fallbackReason;
-		const attempt = async (target, primary) => {
-			const started = Date.now();
-			let result;
-			try {
-				result = await runReview({
-					...runtime,
-					config: fallback === void 0 ? target : {
-						...target,
-						maxRetries: 0,
-						followUpReviews: "off"
-					}
-				}, details);
-			} catch (error) {
-				if (!cancelled()) throw error;
-				result = {
-					kind: "failed",
-					failure: "cancelled"
-				};
-			}
-			if (cancelled()) result = {
-				kind: "failed",
-				failure: "cancelled",
-				...result.fields === void 0 ? {} : { fields: result.fields },
-				...result.usage === void 0 ? {} : { usage: result.usage }
-			};
-			attempts.push({
-				provider: target.provider,
-				model: target.model,
-				outcome: result.kind === "failed" ? result.failure : result.kind,
-				durationMs: Math.max(0, Date.now() - started)
-			});
-			return {
-				...result,
-				diagnostics: {
-					provider: target.provider,
-					model: target.model,
-					reviewAttempts: [...attempts],
-					...primary ? {} : { fallbackReason }
-				}
-			};
-		};
-		if (cancelled()) return cancelledResult();
-		if (fallback === void 0) return attempt(config, true);
-		if (Date.now() < retryAfter || probing) fallbackReason = probing ? "recovery-probe-in-flight" : "primary-cooldown";
-		else {
-			const recovery = retryAfter > 0;
-			if (recovery) probing = true;
-			try {
-				const result = await attempt(config, true);
-				if (result.kind !== "failed" || !UNAVAILABLE.has(result.failure)) {
-					if (result.kind !== "failed") retryAfter = 0;
-					return result;
-				}
-				retryAfter = Date.now() + fallback.cooldownMs;
-				fallbackReason = result.failure;
-			} finally {
-				if (recovery) probing = false;
-			}
-		}
-		if (cancelled()) return cancelledResult();
-		return attempt({
-			...config,
-			...fallback,
-			fallback: false
-		}, false);
+function selectReviewTarget(config, conversationProvider) {
+	const route = conversationProvider === void 0 ? void 0 : config.routes?.find((candidate) => candidate.conversationProviders.includes(conversationProvider));
+	if (route === void 0) return config;
+	return {
+		...config,
+		provider: route.provider,
+		model: route.model,
+		reasoning: route.reasoning ?? config.reasoning,
+		timeoutMs: route.timeoutMs ?? config.timeoutMs
 	};
 }
 
@@ -3439,18 +3301,47 @@ async function runReview(runtime, preset, details, conversation) {
 		clearTimeout(timeout);
 	}
 }
+/** 成功応答や例外とキャンセルが競合しても、キャンセル済みなら失敗として扱う */
+async function settleUnlessCancelled(runtime, run) {
+	const cancelled = () => runtime.sessionSignal.aborted || runtime.context.signal?.aborted === true;
+	if (cancelled()) return {
+		kind: "failed",
+		failure: "cancelled"
+	};
+	let result;
+	try {
+		result = await run();
+	} catch (error) {
+		if (!cancelled()) throw error;
+		result = {
+			kind: "failed",
+			failure: "cancelled"
+		};
+	}
+	if (!cancelled()) return result;
+	return {
+		kind: "failed",
+		failure: "cancelled",
+		...result.fields === void 0 ? {} : { fields: result.fields },
+		...result.usage === void 0 ? {} : { usage: result.usage }
+	};
+}
 function createPermissionReviewer(runtime) {
 	const { config } = runtime;
 	const preset = PRESETS[config.preset];
 	const limiter = preset.createLimiter();
 	let conversation;
-	const review = createReviewRouter(runtime, async (attemptRuntime, details) => runReview(attemptRuntime, preset, details, config.fallback === void 0 || config.fallback === false ? conversation : void 0));
+	let conversationModel;
 	const authorize = async (details, _query, log) => {
 		const startedAt = Date.now();
+		const conversationProvider = runtime.context.model?.provider;
+		const target = selectReviewTarget(config, conversationProvider);
+		const targetModel = `${target.provider}/${target.model}`;
 		const entryBase = {
 			requestId: details.requestId,
-			provider: config.provider,
-			model: config.model
+			provider: target.provider,
+			model: target.model,
+			...conversationProvider === void 0 ? {} : { conversationProvider }
 		};
 		const elapsed = () => Math.max(0, Date.now() - startedAt);
 		const logFailure = (entry) => {
@@ -3483,13 +3374,15 @@ function createPermissionReviewer(runtime) {
 				});
 				return { kind: "allow" };
 			}
-			const result = await review(details);
+			const result = await settleUnlessCancelled(runtime, async () => runReview({
+				...runtime,
+				config: target
+			}, preset, details, conversationModel === targetModel ? conversation : void 0));
 			const durationMs = elapsed();
 			const diagnostics = {
 				policyRevision: preset.policyRevision,
 				contextSource: "active-branch",
 				...result.fields,
-				...result.diagnostics,
 				...result.usage === void 0 ? {} : { usage: result.usage }
 			};
 			if (result.kind === "failed") {
@@ -3510,6 +3403,7 @@ function createPermissionReviewer(runtime) {
 				return verdict;
 			}
 			conversation = result.conversation;
+			conversationModel = targetModel;
 			if (result.kind === "defer") {
 				limiter.recordNonDenial();
 				log.review(DECISION_EVENT, {

@@ -114,21 +114,6 @@ function _addIssue(context, label, dataset, config$1, other) {
 	else dataset.issues = [issue];
 }
 /**
-* Compares two values using the SameValueZero algorithm, which treats `NaN`
-* as equal to itself unlike `===`.
-*
-* @param value1 The first value.
-* @param value2 The second value.
-*
-* @returns Whether the values are equal.
-*
-* @internal
-*/
-/* @__NO_SIDE_EFFECTS__ */
-function _isSameValueZero(value1, value2) {
-	return value1 === value2 || Number.isNaN(value1) && Number.isNaN(value2);
-}
-/**
 * Joins multiple `expects` values with the given separator.
 *
 * @param values The `expects` values.
@@ -386,23 +371,6 @@ function array(item, message$1) {
 	});
 }
 /* @__NO_SIDE_EFFECTS__ */
-function literal(literal_, message$1) {
-	return _standardSchema({
-		kind: "schema",
-		type: "literal",
-		reference: literal,
-		expects: /* @__PURE__ */ _stringify(literal_),
-		async: false,
-		literal: literal_,
-		message: message$1,
-		"~run"(dataset, config$1) {
-			if (/* @__PURE__ */ _isSameValueZero(dataset.value, this.literal)) dataset.typed = true;
-			else _addIssue(this, "type", dataset, config$1);
-			return dataset;
-		}
-	});
-}
-/* @__NO_SIDE_EFFECTS__ */
 function number(message$1) {
 	return _standardSchema({
 		kind: "schema",
@@ -552,58 +520,6 @@ function string(message$1) {
 	});
 }
 /**
-* Returns the sub issues of the provided datasets for the union issue.
-*
-* @param datasets The datasets.
-*
-* @returns The sub issues.
-*
-* @internal
-*/
-/* @__NO_SIDE_EFFECTS__ */
-function _subIssues(datasets) {
-	let issues;
-	if (datasets) for (const dataset of datasets) if (issues) for (const issue of dataset.issues) issues.push(issue);
-	else issues = dataset.issues;
-	return issues;
-}
-/* @__NO_SIDE_EFFECTS__ */
-function union(options, message$1) {
-	return _standardSchema({
-		kind: "schema",
-		type: "union",
-		reference: union,
-		expects: /* @__PURE__ */ _joinExpects(options.map((option) => option.expects), "|"),
-		async: false,
-		options,
-		message: message$1,
-		"~run"(dataset, config$1) {
-			let validDataset;
-			let typedDatasets;
-			let untypedDatasets;
-			for (const schema of this.options) {
-				const optionDataset = schema["~run"]({ value: dataset.value }, config$1);
-				if (optionDataset.typed) if (optionDataset.issues) if (typedDatasets) typedDatasets.push(optionDataset);
-				else typedDatasets = [optionDataset];
-				else {
-					validDataset = optionDataset;
-					break;
-				}
-				else if (untypedDatasets) untypedDatasets.push(optionDataset);
-				else untypedDatasets = [optionDataset];
-			}
-			if (validDataset) return validDataset;
-			if (typedDatasets) {
-				if (typedDatasets.length === 1) return typedDatasets[0];
-				_addIssue(this, "type", dataset, config$1, { issues: /* @__PURE__ */ _subIssues(typedDatasets) });
-				dataset.typed = true;
-			} else if (untypedDatasets?.length === 1) return untypedDatasets[0];
-			else _addIssue(this, "type", dataset, config$1, { issues: /* @__PURE__ */ _subIssues(untypedDatasets) });
-			return dataset;
-		}
-	});
-}
-/**
 * Parses an unknown input based on a schema.
 *
 * @param schema The schema to be used.
@@ -673,13 +589,12 @@ const timeoutSchema = pipe(number(), safeInteger(), minValue(1), maxValue(MAX_TI
 const maxRetriesSchema = pipe(number(), safeInteger(), minValue(0), maxValue(20));
 const rulesSchema = array(nonBlankSchema);
 const builtInRulesSchema = optional(rulesSchema, () => [DEFAULTS_ENTRY]);
-const fallbackSchema = strictObject({
+const routeSchema = strictObject({
+	conversationProviders: pipe(array(nonBlankSchema), minLength(1)),
 	provider: nonBlankSchema,
 	model: nonBlankSchema,
-	reasoning: picklist(REASONING_LEVELS),
-	timeoutMs: timeoutSchema,
-	/** 優先モデルの障害後、再試行せずに切替先を直接使う時間 */
-	cooldownMs: timeoutSchema
+	reasoning: optional(picklist(REASONING_LEVELS)),
+	timeoutMs: optional(timeoutSchema)
 });
 const fileSchema = strictObject({
 	$schema: optional(pipe(string(), minLength(1))),
@@ -692,7 +607,7 @@ const fileSchema = strictObject({
 	maxRetries: optional(maxRetriesSchema),
 	attemptTimeoutMs: optional(timeoutSchema),
 	followUpReviews: optional(picklist(FOLLOW_UP_REVIEW_MODES)),
-	fallback: optional(union([literal(false), fallbackSchema])),
+	routes: optional(array(routeSchema)),
 	autoMode: optional(strictObject({
 		environment: optional(rulesSchema),
 		allow: optional(rulesSchema),
